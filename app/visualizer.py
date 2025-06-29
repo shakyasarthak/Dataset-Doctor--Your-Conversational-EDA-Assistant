@@ -8,21 +8,15 @@ def extract_columns(df, user_input):
     """Enhanced column extraction with NLP patterns"""
     columns = []
     user_input = user_input.lower()
-    
-    # Pattern 1: Direct column names
     for col in df.columns:
         col_lower = col.lower()
         if re.search(rf"\b{re.escape(col_lower)}\b", user_input):
             columns.append(col)
-    
-    # Pattern 2: "of " pattern
     if not columns and " of " in user_input:
         last_part = user_input.split("of")[-1].strip()
         for col in df.columns:
             if col.lower() in last_part:
                 columns.append(col)
-    
-    # Pattern 3: "between X and Y"
     if not columns and " between " in user_input and " and " in user_input:
         parts = user_input.split("between")[-1].split(" and ")
         if len(parts) >= 2:
@@ -30,21 +24,16 @@ def extract_columns(df, user_input):
             col2 = parts[1].split()[0].strip()
             if col1 in df.columns and col2 in df.columns:
                 columns = [col1, col2]
-    
-    # Pattern 4: "for X" pattern
     if not columns and " for " in user_input:
         last_part = user_input.split("for")[-1].strip()
         for col in df.columns:
             if col.lower() in last_part:
                 columns.append(col)
-    
     return columns
 
 def get_visualization(df, user_input, viz_type):
     """Unified visualization handler"""
     columns = extract_columns(df, user_input)
-    
-    # Handle numeric parameters
     bins = 20
     if "bins" in user_input:
         try:
@@ -52,11 +41,8 @@ def get_visualization(df, user_input, viz_type):
             bins = int(bins_match.group(1)) if bins_match else 20
         except:
             pass
-    
-    # Generate visualization
     if not columns:
         raise ValueError("Couldn't identify columns from your query")
-    
     if viz_type == "histogram":
         fig = histogram(df, columns[0], bins)
     elif viz_type == "boxplot":
@@ -83,10 +69,8 @@ def get_visualization(df, user_input, viz_type):
         fig = radar_plot(df, columns[:5], df[columns[:5]].mean().values.tolist())
     else:
         raise ValueError(f"Unsupported visualization type: {viz_type}")
-    
     return fig, ', '.join(columns[:3])
 
-# Visualization functions
 def histogram(df, col, bins=20):
     plt.figure(figsize=(10, 6))
     ax = sns.histplot(df[col].dropna(), kde=True, bins=bins)
@@ -143,12 +127,48 @@ def radar_plot(df, categories, values):
     angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
-    
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
     ax.fill(angles, values, color='skyblue', alpha=0.25)
     ax.plot(angles, values, color='royalblue', linewidth=2)
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(categories)
     ax.set_title("Radar Plot", fontsize=14)
+    plt.tight_layout()
+    return plt.gcf()
+
+def correlation_matrix(df, columns=None):
+    """Generate annotated correlation matrix"""
+    if columns is None:
+        columns = df.select_dtypes(include=np.number).columns.tolist()
+    corr = df[columns].corr()
+    plt.figure(figsize=(12, 10))
+    ax = sns.heatmap(corr, annot=True, fmt=".2f", cmap='coolwarm',
+                     cbar=True, square=True)
+    ax.set_title("Correlation Matrix", fontsize=16)
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    return plt.gcf()
+
+def scatter_matrix(df, columns=None):
+    """Generate pairplot for multiple variables"""
+    if columns is None:
+        columns = df.select_dtypes(include=np.number).columns.tolist()[:5]
+    g = sns.pairplot(df[columns], diag_kind='kde')
+    g.fig.suptitle("Scatter Matrix", y=1.02)
+    return g.fig
+
+def correlation_plot(df, col1, col2):
+    """Enhanced scatter plot with regression line"""
+    plt.figure(figsize=(10, 6))
+    ax = sns.regplot(x=df[col1], y=df[col2],
+                     scatter_kws={'alpha':0.5},
+                     line_kws={'color':'red'})
+    ax.set_title(f"Correlation: {col1} vs {col2}", fontsize=14)
+    ax.set_xlabel(col1, fontsize=12)
+    ax.set_ylabel(col2, fontsize=12)
+    r = df[[col1, col2]].corr().iloc[0,1]
+    plt.annotate(f'r = {r:.2f}', xy=(0.05, 0.95),
+                 xycoords='axes fraction', fontsize=12,
+                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
     plt.tight_layout()
     return plt.gcf()

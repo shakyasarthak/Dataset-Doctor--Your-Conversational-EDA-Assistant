@@ -1,8 +1,6 @@
 import pandas as pd
 from ydata_profiling import ProfileReport
-from sklearn.impute import SimpleImputer
 import numpy as np
-from scipy import stats
 
 def get_summary(df):
     """Generate statistical summary with enhanced metrics"""
@@ -25,38 +23,38 @@ def get_missing_report(df):
 def generate_profile(df):
     """Generate interactive EDA report"""
     profile = ProfileReport(df,
-        explorative=True,
-        correlations={"auto": {"calculate": True}},
-        interactions={"continuous": True})
+                           explorative=True,
+                           correlations={"auto": {"calculate": True}},
+                           interactions={"continuous": True})
     report_path = "eda_report.html"
     profile.to_file(report_path)
     return report_path
 
 def clean_data(df):
     """Auto-clean data with intelligent handling"""
-    # Handle missing values
-    for col in df.select_dtypes(include='number'):
-        if df[col].isnull().sum() > 0:
-            df[col].fillna(df[col].median(), inplace=True)
-    
-    for col in df.select_dtypes(exclude='number'):
-        if df[col].isnull().sum() > 0:
-            df[col].fillna(df[col].mode()[0], inplace=True)
-    
-    # Remove duplicates
-    df.drop_duplicates(inplace=True)
-    
-    # Handle outliers using IQR
-    for col in df.select_dtypes(include='number'):
-        if len(df[col].unique()) > 10:
-            Q1 = df[col].quantile(0.25)
-            Q3 = df[col].quantile(0.75)
+    cleaned_df = df.copy()
+    for col in cleaned_df.select_dtypes(include='number'):
+        if cleaned_df[col].isnull().sum() > 0:
+            cleaned_df[col] = cleaned_df[col].fillna(cleaned_df[col].median())
+    for col in cleaned_df.select_dtypes(exclude='number'):
+        if cleaned_df[col].isnull().sum() > 0:
+            mode_val = cleaned_df[col].mode()[0] if not cleaned_df[col].mode().empty else ''
+            cleaned_df[col] = cleaned_df[col].fillna(mode_val)
+    cleaned_df = cleaned_df.drop_duplicates()
+    for col in cleaned_df.select_dtypes(include='number'):
+        if len(cleaned_df[col].unique()) > 10:
+            Q1 = cleaned_df[col].quantile(0.25)
+            Q3 = cleaned_df[col].quantile(0.75)
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            
-            # Cap outliers
-            df[col] = np.where(df[col] < lower_bound, lower_bound, df[col])
-            df[col] = np.where(df[col] > upper_bound, upper_bound, df[col])
-    
-    return df
+            cleaned_df[col] = np.where(
+                cleaned_df[col] < lower_bound,
+                lower_bound,
+                np.where(
+                    cleaned_df[col] > upper_bound,
+                    upper_bound,
+                    cleaned_df[col]
+                )
+            )
+    return cleaned_df
