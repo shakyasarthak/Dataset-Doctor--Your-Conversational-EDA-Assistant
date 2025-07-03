@@ -1,80 +1,24 @@
-import torch
-from langchain_experimental.agents import create_csv_agent
-from langchain_huggingface import HuggingFaceEndpoint
-from dotenv import load_dotenv
 import os
-import streamlit as st
-from eda_engine import get_summary, get_missing_report, generate_profile, clean_data
-from visualizer import get_visualization
-import tempfile
-import atexit
-from transformers import pipeline
+from together import Together
 import pandas as pd
-import re
-import numpy as np
+from eda_engine import get_summary, get_missing_report, generate_profile, clean_data, suggest_features
+from visualizer import get_visualization
 
-# Load environment variables
-load_dotenv()
+client = Together(api_key=os.getenv("TOGETHER_API_KEY"))
 
-# Verify Hugging Face API key
-api_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if not api_key:
-    st.error("Hugging Face API key not found. Please set the HUGGINGFACEHUB_API_TOKEN environment variable.")
-    exit(1)
-
-# Load NLP model for intent recognition
-nlp_model = pipeline(
-    "text-classification",
-    model="distilbert-base-uncased",
-    top_k=1
-)
-
-def understand_intent(user_input):
-    """Advanced intent classification"""
-    user_input = user_input.lower()
-    intent_map = {
-        "visualization": ["histogram", "distribution", "chart", "plot", "graph", "visualize", "show me"],
-        "summary": ["summarize", "describe", "overview", "stats", "statistics"],
-        "missing": ["missing", "null", "na", "empty", "blank"],
-        "report": ["report", "profile", "analysis", "eda", "exploratory"],
-        "clean": ["clean", "tidy", "preprocess", "outlier", "impute", "handle"],
-        "correlation": ["correlation", "relationship", "correlate", "r value", "r-value", "covariance"]
-    }
-    # Try classification model
-    try:
-        result = nlp_model(user_input)[0]
-        if result['score'] > 0.7:
-            return result['label']
-    except:
-        pass
-    # Fallback to keyword matching
-    for intent, keywords in intent_map.items():
-        if any(keyword in user_input for keyword in keywords):
-            return intent
-    return "general"
-
-def get_agent(df):
-    """Create LangChain agent for CSV analysis"""
-    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
-        temp_path = tmp.name
-        df.to_csv(temp_path, index=False)
-        atexit.register(lambda: os.unlink(temp_path) if os.path.exists(temp_path) else None)
-    hf_llm = HuggingFaceEndpoint(
-        repo_id="google/flan-t5-xxl",
-        max_new_tokens=512,
-        temperature=0.1
+def together_chat(prompt, system_message=None):
+    messages = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": prompt})
+    response = client.chat.completions.create(
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        messages=messages,
+        stream=False
     )
-    # Add security parameter and sandboxing
-    return create_csv_agent(
-        hf_llm,
-        temp_path,
-        verbose=True,
-        agent_type="openai-tools",
-        allow_dangerous_code=True
-    )
+    return response.choices[0].message.content.strip()
 
 def respond(df, user_input):
-    """Handle user input with NLP and return response"""
     intent = understand_intent(user_input)
     try:
         if intent == "visualization":
@@ -89,27 +33,43 @@ def respond(df, user_input):
             return handle_cleaning(df)
         elif intent == "correlation":
             return handle_correlation(df, user_input)
+        elif intent == "suggestions":
+            return handle_suggestions(df)
         else:
             return handle_general_query(df, user_input)
     except Exception as e:
-        # Friendly error messages for common errors
-        error_msg = str(e)
-        user_friendly_errors = {
-            "unexpected keyword argument 'tools'":
-                "I'm having trouble processing that request. Please try simpler questions about your data.",
-            "DType could not be promoted":
-                "I found mixed data types in your columns. Could you check if all values in each column are the same type?",
-            "Couldn't identify columns":
-                "I couldn't find the columns you mentioned. Try naming them specifically like 'Show sales by region'"
-        }
-        for pattern, friendly_msg in user_friendly_errors.items():
-            if pattern in error_msg:
-                return friendly_msg
-        return f"Oops! Something went wrong: {error_msg}. Try asking differently!"
+        return f"Oops! Something went wrong: {str(e)}. Try asking differently!"
+
+def understand_intent(user_input):
+    user_input = user_input.lower()
+    intent_map = {
+        "visualization": ["histogram", "distribution", "chart", "plot", "graph", "visualize", "show me"],
+        "summary": ["summarize", "describe", "overview", "stats", "statistics"],
+        "missing": ["missing", "null", "na", "empty", "blank"],
+        "report": ["report", "profile", "analysis", "eda", "exploratory"],
+        "clean": ["clean", "tidy", "preprocess", "outlier", "impute", "handle"],
+        "correlation": ["correlation", "relationship", "correlate", "r value", "r-value", "covariance"],
+        "suggestions": ["suggest", "feature", "engineering", "transform", "encode"]
+    }
+    for intent, keywords in intent_map.items():
+        if any(keyword in user_input for keyword in keywords):
+            return intent
+    return "general"
 
 def handle_visualization(df, query):
-    """Unified visualization handler"""
-    # Determine visualization type
+    import plotly.express as px
+    if "refine" in query.lower():
+        if 'last_fig' in st.session_state:
+            fig = st.session_state.last_fig
+            if "add trendline" in query.lower():
+                fig = px.scatter(df, x=fig.data[0].x, y=fig.data[0].y, trendline="ols")
+            if "change color" in query.lower():
+                color = "red" if "red" in query.lower() else "blue"
+                fig.update_traces(marker=dict(color=color))
+            st.session_state.last_fig = fig
+            return (f"Refined visualization based on your request", fig)
+        else:
+            return "No previous visualization to refine. Please generate a visualization first."
     if "pie" in query or "percent" in query:
         viz_type = "piechart"
     elif "heatmap" in query or "correlation" in query:
@@ -127,44 +87,24 @@ def handle_visualization(df, query):
     else:
         viz_type = "histogram"
     fig, col_name = get_visualization(df, query, viz_type)
+    import streamlit as st
+    st.session_state.last_fig = fig
     return (f"Here's the {viz_type} for `{col_name}`", fig)
 
 def handle_summary(df):
-    summary = get_summary(df)
-    return summary
+    return get_summary(df)
 
 def handle_missing(df):
-    missing_report = get_missing_report(df)
-    return missing_report
+    return get_missing_report(df)
 
 def handle_report(df):
     report_path = generate_profile(df)
     with open(report_path, "r", encoding="utf-8") as f:
         report_html = f.read()
     summary = f"🔍 Here's my analysis of your dataset:\n\n"\
-              f"- Found {len(df.columns)} features and {len(df)} records\n"\
-              f"- Key insights: {generate_insights(df)}\n\n"\
+              f"- Found {len(df.columns)} features and {len(df)} records\n\n"\
               f"Full EDA report is ready below 👇"
     return (summary, "report", report_html)
-
-def generate_insights(df):
-    """Generate natural language insights"""
-    insights = []
-    for col in df.select_dtypes(include='number'):
-        insights.append(f"{col} ranges from {df[col].min():.2f} to {df[col].max():.2f}")
-    for col in df.select_dtypes(exclude='number'):
-        top_val = df[col].value_counts().index[0]
-        insights.append(f"{col} has {df[col].nunique()} unique values, most common: {top_val}")
-    numeric_cols = df.select_dtypes(include=np.number).columns
-    if len(numeric_cols) >= 2:
-        corr_matrix = df[numeric_cols].corr().abs()
-        strong_corrs = corr_matrix.unstack().sort_values(ascending=False).drop_duplicates()
-        strong_corrs = strong_corrs[strong_corrs.between(0.7, 1) & (strong_corrs < 1)]
-        if not strong_corrs.empty:
-            insights.append("\n🔗 Strong correlations found:")
-            for (col1, col2), value in strong_corrs.head(3).items():
-                insights.append(f"- {col1} & {col2}: {value:.2f}")
-    return "\n- ".join(insights[:5]) + "\n... [see full report for more]"
 
 def handle_cleaning(df):
     cleaned_df = clean_data(df.copy())
@@ -186,7 +126,53 @@ def handle_correlation(df, query):
         fig = scatter_matrix(df, columns)
         return (f"Scatter matrix for {', '.join(columns[:5])}:", fig)
 
+def handle_suggestions(df):
+    suggestions = suggest_features(df)
+    if suggestions:
+        return "Here are some feature engineering suggestions:\n- " + "\n- ".join(suggestions)
+    else:
+        return "No feature engineering suggestions at this time."
+
 def handle_general_query(df, user_input):
-    agent = get_agent(df)
-    response = agent.invoke(user_input)['output']
-    return response
+    # Optionally, add a system message for context
+    system_message = "You are a data analysis assistant. Answer accurately and step-by-step."
+    return together_chat(user_input, system_message)
+
+def generate_dynamic_suggestions(df):
+    suggestions = []
+    numeric_cols = df.select_dtypes(include='number').columns.tolist()
+    categorical_cols = df.select_dtypes(exclude='number').columns.tolist()
+    if numeric_cols:
+        if len(numeric_cols) > 1:
+            suggestions.append(f"Show correlation between {numeric_cols[0]} and {numeric_cols[1]}")
+        suggestions.append(f"Plot distribution of {numeric_cols[0]}")
+    if categorical_cols:
+        suggestions.append(f"Show bar chart of {categorical_cols[0]}")
+    suggestions.append("Generate EDA report")
+    suggestions.append("Check for missing values")
+    suggestions.append("Suggest feature engineering")
+    return suggestions[:5]
+
+def generate_explanation(df, last_query, last_response):
+    prompt = (
+        f"User asked: {last_query}\n"
+        f"Assistant answered: {last_response}\n"
+        "Explain, step-by-step, how you arrived at this answer. "
+        "Include reasoning, calculations, and any assumptions."
+    )
+    return together_chat(prompt)
+
+def generate_recommendations(df, last_query, last_response):
+    preview = (
+        f"Dataset shape: {df.shape[0]} rows × {df.shape[1]} columns. "
+        f"Columns: {', '.join(df.columns[:8])}."
+    )
+    prompt = (
+        f"User's last question: {last_query}\n"
+        f"Assistant's last answer: {last_response}\n"
+        f"{preview}\n"
+        "Based on this, suggest 2-3 next-step analyses or questions the user might ask next. "
+        "Be proactive and context-aware."
+    )
+    return together_chat(prompt)
+

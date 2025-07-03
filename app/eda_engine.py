@@ -3,7 +3,6 @@ from ydata_profiling import ProfileReport
 import numpy as np
 
 def get_summary(df):
-    """Generate statistical summary with enhanced metrics"""
     summary = df.describe(include='all').T
     summary['missing'] = df.isnull().sum()
     summary['missing_pct'] = (df.isnull().mean() * 100).round(2)
@@ -11,7 +10,6 @@ def get_summary(df):
     return summary
 
 def get_missing_report(df):
-    """Generate comprehensive missing value report"""
     missing = df.isnull().sum()
     missing = missing[missing > 0].sort_values(ascending=False)
     missing_pct = (df.isnull().mean() * 100).round(2)
@@ -21,17 +19,15 @@ def get_missing_report(df):
     })
 
 def generate_profile(df):
-    """Generate interactive EDA report"""
     profile = ProfileReport(df,
-                           explorative=True,
-                           correlations={"auto": {"calculate": True}},
-                           interactions={"continuous": True})
+                            explorative=True,
+                            correlations={"auto": {"calculate": True}},
+                            interactions={"continuous": True})
     report_path = "eda_report.html"
     profile.to_file(report_path)
     return report_path
 
 def clean_data(df):
-    """Auto-clean data with intelligent handling"""
     cleaned_df = df.copy()
     for col in cleaned_df.select_dtypes(include='number'):
         if cleaned_df[col].isnull().sum() > 0:
@@ -58,3 +54,24 @@ def clean_data(df):
                 )
             )
     return cleaned_df
+
+def suggest_features(df):
+    suggestions = []
+    numeric_cols = df.select_dtypes(include=np.number).columns
+    for col in numeric_cols:
+        if df[col].nunique() > 10:
+            suggestions.append(f"Consider log transformation for {col}")
+        if abs(df[col].skew()) > 1.0:
+            suggestions.append(f"Consider transformation for {col} (skew={df[col].skew():.2f})")
+    categorical_cols = df.select_dtypes(exclude=np.number).columns
+    for col in categorical_cols:
+        if df[col].nunique() < 20:
+            suggestions.append(f"Consider one-hot encoding for {col}")
+        elif df[col].nunique() < 100:
+            suggestions.append(f"Consider target encoding for {col}")
+    if len(numeric_cols) >= 2:
+        suggestions.append(f"Create interaction feature between {numeric_cols[0]} and {numeric_cols[1]}")
+    time_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+    if time_cols:
+        suggestions.append(f"Extract datetime features from {time_cols[0]} (e.g., day, month, year)")
+    return suggestions
