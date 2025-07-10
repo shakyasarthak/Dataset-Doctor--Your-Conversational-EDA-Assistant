@@ -164,7 +164,4 @@ streamlit run app.py
 
 **Enjoy exploring your data with Dataset Doctor!**
 
-[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/64888235/f073623c-7663-4310-8c1c-e458cc9e367b/app.py
-[2] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/64888235/2213ce7b-81f4-411f-a7bf-53eb58eb667f/chatbot.py
-[3] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/64888235/79301ca0-18f7-4fd9-a0ec-41b3976328a6/eda_engine.py
-[4] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/64888235/b75eed0c-9d5d-4139-9ccc-51674e9b7b13/visualizer.py
+
