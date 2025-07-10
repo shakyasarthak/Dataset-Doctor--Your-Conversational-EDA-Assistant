@@ -14,7 +14,7 @@ if not api_key:
     st.stop()
 
 st.set_page_config(
-    page_title="DataInsight Pro 🤖",
+    page_title="Dataset Doctor 🤖",
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="expanded"
@@ -23,7 +23,7 @@ st.set_page_config(
 if "df" not in st.session_state:
     st.session_state.df = None
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Hi! I'm your DataInsight Pro 🤖. Upload a CSV file to start exploring your data!"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Hi! I'm your Dataset Doctor 🤖. Upload a CSV file to start exploring your data!"}]
 if "last_action" not in st.session_state:
     st.session_state.last_action = None
 if "last_user_query" not in st.session_state:
